@@ -1,0 +1,65 @@
+[
+  {
+    "speaker": "SPEAKER_01",
+    "role": "CLINICIAN",
+    "start": 0,
+    "end": 2.24,
+    "text": "Good morning. What's the problem?"
+  },
+  {
+    "speaker": "SPEAKER_00",
+    "role": "PATIENT",
+    "start": 2.84,
+    "end": 4.88,
+    "text": "Good morning, doctor. I have a headache."
+  },
+  {
+    "speaker": "SPEAKER_01",
+    "role": "CLINICIAN",
+    "start": 5.36,
+    "end": 6.76,
+    "text": "How long have you had it?"
+  },
+  {
+    "speaker": "SPEAKER_00",
+    "role": "PATIENT",
+    "start": 7.04,
+    "end": 8.04,
+    "text": "For two days."
+  },
+  {
+    "speaker": "SPEAKER_01",
+    "role": "CLINICIAN",
+    "start": 8.56,
+    "end": 9.56,
+    "text": "Do you have a fever?"
+  },
+  {
+    "speaker": "SPEAKER_00",
+    "role": "PATIENT",
+    "start": 10.08,
+    "end": 11.44,
+    "text": "No, just headache."
+  },
+  {
+    "speaker": "SPEAKER_01",
+    "role": "CLINICIAN",
+    "start": 12.1,
+    "end": 14.66,
+    "text": "Okay, take this medicine after meals."
+  },
+  {
+    "speaker": "SPEAKER_00",
+    "role": "PATIENT",
+    "start": 15.08,
+    "end": 15.88,
+    "text": "Thank you, doctor."
+  },
+  {
+    "speaker": "SPEAKER_01",
+    "role": "CLINICIAN",
+    "start": 16.36,
+    "end": 18.5,
+    "text": "You'll be fine soon. Take care."
+  }
+]

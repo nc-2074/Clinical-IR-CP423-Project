@@ -1,0 +1,76 @@
+{
+  "name": "My workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://10.0.0.162:5001/analyze",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "transcript_path",
+              "value": "={{ $('Webhook').item.json.body.transcript_path }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -64,
+        -160
+      ],
+      "id": "03122a22-d2c8-4a5e-8e6a-10491b1e376e",
+      "name": "HTTP Request2"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "clinical-pipeline",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -320,
+        -160
+      ],
+      "id": "e34646b1-285a-4a09-9e7e-c2b1ec01bdd5",
+      "name": "Webhook",
+      "webhookId": "fd7b0426-cbd4-485e-8216-36a407fe6da2"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "HTTP Request2": {
+      "main": [
+        []
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "5208e71b-8556-4749-99be-62a60a00937b",
+  "meta": {
+    "instanceId": "f282ac4467cc0d0166bd4f1a1819ecdab1dc6f48f9e8be684d22ec0b3a22ea6c"
+  },
+  "id": "YpDXpF3Hf0F9hmpS",
+  "tags": []
+}

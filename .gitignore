@@ -1,0 +1,28 @@
+# Virtual environment
+venv/
+
+# API keys — never commit this
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Audio files — too large for git
+*.wav
+*.mp3
+*.m4a
+
+# Transcript outputs
+*_transcript.json
+
+# MedGemma model files
+models/
+
+# Mac system files
+.DS_Store
+
+# n8n data
+n8n_data/

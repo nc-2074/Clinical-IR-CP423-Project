@@ -36,6 +36,7 @@ from livekit.agents import (
     JobContext,
     WorkerOptions,
     cli,
+    stt as agents_stt,
 )
 from livekit.plugins import groq as livekit_groq
 from livekit.plugins.silero import VAD
@@ -54,16 +55,11 @@ _stt = livekit_groq.STT()
 print("Models ready.")
 
 # ── Session state ─────────────────────────────────────────────────────
-# Maps room_name → list of transcript segments collected so far
 _sessions: dict[str, list[dict]] = {}
-_session_files: dict[str, str] = {}  # room_name → output file path
+_session_files: dict[str, str] = {}
 
 
 def get_role_for_identity(identity: str) -> str:
-    """
-    Map LiveKit participant identity to clinical role.
-    Tokens are generated with identity='patient' or identity='clinician'.
-    """
     identity_lower = identity.lower()
     if "patient" in identity_lower:
         return "PATIENT"
@@ -81,50 +77,76 @@ async def transcribe_track(
     output_path: str,
 ):
     """
-    Transcribe a single participant's audio track continuously.
-    One coroutine runs per participant, so both are transcribed in parallel.
+    Transcribe a single participant's audio track using VAD-gated STT.
+    Creates a fresh STT stream for each participant track.
     """
     identity = participant.identity
     role = get_role_for_identity(identity)
     logger.info(f"Started transcribing track for: {identity} ({role})")
 
-    audio_stream = rtc.AudioStream(track)
+    audio_stream = rtc.AudioStream(track, sample_rate=16000, num_channels=1)
 
+    # Use VAD to gate the STT — only send speech frames, not silence
+    # This prevents the stream from closing prematurely on silence
+    vad_stream = _vad.stream()
+
+    # Create a fresh STT stream for this participant
     stt_stream = _stt.stream()
 
-    async def push_audio():
-        async for audio_frame_event in audio_stream:
-            stt_stream.push_frame(audio_frame_event.frame)
-        await stt_stream.aclose()
+    async def push_vad():
+        """Push raw audio into the VAD stream."""
+        try:
+            async for audio_frame_event in audio_stream:
+                vad_stream.push_frame(audio_frame_event.frame)
+        finally:
+            await vad_stream.aclose()
 
-    asyncio.ensure_future(push_audio())
+    async def vad_to_stt():
+        """Forward speech frames from VAD into the STT stream."""
+        try:
+            async for vad_event in vad_stream:
+                if isinstance(vad_event, agents_stt.SpeechEvent):
+                    continue
+                # Forward audio frames that VAD marks as speech
+                if hasattr(vad_event, "frame"):
+                    try:
+                        stt_stream.push_frame(vad_event.frame)
+                    except RuntimeError:
+                        break
+        finally:
+            await stt_stream.aclose()
 
-    async for event in stt_stream:
-        if not hasattr(event, "alternatives") or not event.alternatives:
-            continue
-        text = event.alternatives[0].text.strip()
-        if not text:
-            continue
+    async def read_stt():
+        """Read transcription results from the STT stream."""
+        async for event in stt_stream:
+            if not hasattr(event, "alternatives") or not event.alternatives:
+                continue
+            text = event.alternatives[0].text.strip()
+            if not text:
+                continue
 
-        elapsed = time.time() - start_time
-        segment = {
-            "speaker":    identity,
-            "role":       role,
-            "start":      round(elapsed, 3),
-            "end":        round(elapsed + 2.0, 3),
-            "start_time": round(elapsed, 3),
-            "end_time":   round(elapsed + 2.0, 3),
-            "text":       text,
-        }
+            elapsed = time.time() - start_time
+            segment = {
+                "speaker":    identity,
+                "role":       role,
+                "start":      round(elapsed, 3),
+                "end":        round(elapsed + 2.0, 3),
+                "start_time": round(elapsed, 3),
+                "end_time":   round(elapsed + 2.0, 3),
+                "text":       text,
+            }
 
-        _sessions[room_name].append(segment)
+            _sessions[room_name].append(segment)
 
-        with open(output_path, "w", encoding="utf-8") as f:
-            json.dump(_sessions[room_name], f, indent=2)
+            with open(output_path, "w", encoding="utf-8") as f:
+                json.dump(_sessions[room_name], f, indent=2)
 
-        timestamp = time.strftime("%H:%M:%S")
-        logger.info(f"[{timestamp}] [{role}] {text}")
-        print(f"[{timestamp}] [{role:10s}] {text}")
+            timestamp = time.strftime("%H:%M:%S")
+            logger.info(f"[{timestamp}] [{role}] {text}")
+            print(f"[{timestamp}] [{role:10s}] {text}")
+
+    # Run all three coroutines concurrently for this participant
+    await asyncio.gather(push_vad(), vad_to_stt(), read_stt())
 
 
 async def entrypoint(ctx: JobContext):
@@ -141,7 +163,6 @@ async def entrypoint(ctx: JobContext):
         logger.error(f"Missing env vars: {', '.join(missing)}")
         return
 
-    # Initialise session storage for this room
     if room_name not in _sessions:
         _sessions[room_name] = []
 
@@ -153,23 +174,28 @@ async def entrypoint(ctx: JobContext):
     await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
     logger.info("Connected to LiveKit room")
 
-    async def handle_track(publication: rtc.RemoteTrackPublication, participant: rtc.RemoteParticipant):
-        """Subscribe to an audio track and spawn a transcription coroutine for it."""
+    async def handle_track(
+        publication: rtc.RemoteTrackPublication,
+        participant: rtc.RemoteParticipant,
+    ):
         if publication.kind != rtc.TrackKind.KIND_AUDIO:
             return
         if publication.track is None:
             return
+        logger.info(f"Subscribing to track from: {participant.identity}")
         asyncio.ensure_future(
-            transcribe_track(participant, publication.track, room_name, start_time, output_path)
+            transcribe_track(
+                participant, publication.track, room_name, start_time, output_path
+            )
         )
 
-    # Handle participants already in the room when the agent joins
+    # Handle participants already in the room
     for participant in ctx.room.remote_participants.values():
         for publication in participant.track_publications.values():
             if publication.track is not None:
                 await handle_track(publication, participant)
 
-    # Handle tracks from participants who join or publish after the agent connects
+    # Handle participants who join after the agent connects
     @ctx.room.on("track_subscribed")
     def on_track_subscribed(
         track: rtc.Track,
@@ -186,17 +212,14 @@ async def entrypoint(ctx: JobContext):
 
 
 def get_session_transcript(room_name: str) -> list[dict]:
-    """Return in-memory transcript segments for a room (used by Flask)."""
     return _sessions.get(room_name, [])
 
 
 def get_session_file(room_name: str) -> str | None:
-    """Return the output file path for a room's transcript."""
     return _session_files.get(room_name)
 
 
 def start_worker():
-    """Start the LiveKit worker. Call this from a background thread."""
     cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint))
 
 
